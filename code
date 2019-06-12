@@ -1,0 +1,144 @@
+# C1函数功能：从dataset中统计独立的数据
+# input:dataset,原始数据集，list格式
+# return:numlist,独立的数据及，list格式
+def C1(dataset):
+    numlist = []
+    for row in dataset:
+        for num in row:
+            if [num] not in numlist:  # 加中括号是为了和下一行的元素保持样式一致
+                numlist.append([num]) # 加中括号，是为了和后续长度大于1的频繁集保持样式一致，即{[a1, a2, ...:x1], [b1, b2, ...:x2], ...}
+
+    return map(frozenset, numlist)  # 使用frozenset，是因为后续需要将numlist中的元素设置为字典的key，而key必须不可变，而numlist是可变类型list
+
+==============================================================================================================================
+
+from collections import defaultdict
+import copy
+# 函数功能：1.统计numlist中的数据个数；2.计算支持度；3.筛选符合支持度的数据或数据组合
+# input：dataset, numlist, support, itemlen--原始数据集,独立的数据集, 最小支持度和频繁集长度
+# return：freqitemdict--频繁及字典
+
+#freqitemdict = {}
+def L1(dataset, numlist, minsupport):
+    freqsubitemdict = defaultdict(int)  # 使用defaultdict，是因为后续会让其的value自增1，而普通字典类型会报错
+    dict_temp = {}
+    list_temp = []
+    unsatisfy = 0
+    numlist_copy = copy.deepcopy(numlist)  # 使用copy.deepcopy，是因为numlist被frozenset后，在for场景中没有自动恢复到初始位置的功能，只能拷贝
+    for row in dataset:
+        numlist = copy.deepcopy(numlist_copy)  # 同上
+        for num in numlist:
+            if set(num).issubset(set(row)):  # 两个列表判断包含不可直接使用in/not in，可转换为set类型后，使用issubset函数判断
+                if num in freqsubitemdict.keys():
+                    freqsubitemdict[num] +=1
+                else:
+                    freqsubitemdict[num] = 1
+    
+    # 筛选支持度
+    for key in freqsubitemdict:
+        support = freqsubitemdict[key] / len(dataset)
+        if minsupport <= support:
+            dict_temp[key] = support  # 保存为字典，以便后续可直接查询计算置信度
+            list_temp.append(key)     # 将本次的key单独保存，以便后续可直接用于生成长度大于1的频繁集
+        else:
+            unsatisfy += 1
+            
+    # 输出符号要求的频繁集
+    if 0 < len(list_temp):
+        for index in range(len(list_temp)):
+            print('the support of the num : #{0} is {1}'.format(list_temp[index], dict_temp[list_temp[index]]))
+        print('unsatisfy : ', unsatisfy)
+    else:
+        print('end')
+    return dict_temp, list_temp
+    
+==============================================================================================================================
+
+# 函数功能：生成长度大于1的频繁集
+# input: dataset, numlist, itemlen--数据集，长度为itemlen-1的频繁集和待生成的频繁集长度
+def Lk(prelist, newfreqitemlen):
+    newdict = []
+    freqitemcount = 0
+    for head in range(len(prelist)): # 从首个频繁集开始
+        for rear in range(head + 1, len(prelist)):  # 从第二个频繁集开始
+            head_temp = list(prelist[head])[:(newfreqitemlen - 2)] # 首次循环，获取首个频繁集中的首元素，注意:如果频繁集只有单个元素，则为空
+                                                                   # 举例:prelist-->[[1], [2]]，则head_temp[0][:0] -->[], newfreqitemlen--2
+                                                                   # 举例:prelist-->[[1,2],[2,3]]，则head_temp[0][:1]-->[1]，newfreqitemlen--3
+                                                                   # 下面的rear_temp类似，值分别取[]和[2]
+            rear_temp = list(prelist[rear])[:(newfreqitemlen - 2)] #首次循环，获取第二个频繁集中的首元素，注意:如果频繁集只有单个元素，则为空
+            head_temp.sort()  # 目的是排序后方便和rear_temp做比较，但好像乱序也不影响比较
+            rear_temp.sort()
+            if head_temp == rear_temp:
+                newdict.append(prelist[head] | prelist[rear]) # 根据已有的频繁集，分别合成长度增加1的新频繁集，注意:'|'操作符不能用于列表
+                freqitemcount += 1
+
+    return newdict
+    
+    ==============================================================================================================================
+    
+    # 生成规则，计算置信度并筛选
+# input: listgroup, dictgroup, conf--频繁集列表，频繁集字典和置信度
+# output：none
+def conf(listgroup, dictgroup, conf):  # listgroup是个二位列表，内部列表每个代表一组长度相同的频繁集，这样便于通过下标寻找所需长度的频繁集
+                                       # 举例，listgroup--[[1, 2, 3, 4], [[1, 2], [1, 3]], [[1, 2, 3]]]
+    
+    candidaterule = []
+    
+    for index in range(1, len(listgroup)):  # range下限为1，是因为0对应频繁集长度为1，单个元素无须产生关联规则，所以从长度为2的频繁集开始
+        for row in listgroup[index]:
+            itemlen = index + 1 # 最小频繁集包含数据个数，0对应长度为1的频繁集，1对应长度为2的频繁集...
+            j = 2               # 产生新频繁集的最小长度
+            candidaterule = [frozenset([item]) for item in row]  # 因为后续candidaterule会作为字典的key，所以，需要frozenset
+                                                                 # 因为数字不能迭代，所以，需要加中括号--frozenset([item])
+            newlist = candidaterule  # 保存candidaterule，如果频繁集长度大于2，则需要用下面的while继续生成频繁子集，就需要用到candidaterule
+                                     # 但不能直接传递candidaterule，因为candidaterule中已经包含了之前生成的频繁集
+
+            while 1 <= (itemlen - j): # 所需生成的频繁子集长度，是(当前频繁集长度-1)-->[1, 2, 3]最多生成子集[1],[2],[3],[1,2],[1,3],[2,3]
+                newlist = Lk(newlist, j) # newlist只包含上一次生成的频繁集，再早的频繁集则不包含
+                candidaterule.extend(newlist)  # 需使用extend，简单的将所有生成的频繁集依次添加即可，如果使用append，则从长度为2的频繁集开始，
+                                               # 都会多一副中括号
+                j += 1 
+
+            for i in range(len(candidaterule)):               
+                confresult = dictgroup[row] / dictgroup[candidaterule[i]]
+                if conf <= confresult:
+                    print('{0} --> {1} : {2}'.format(candidaterule[i], row - candidaterule[i], confresult))  # 只有字典类型才可以直接用'-'
+                    
+==============================================================================================================================
+
+# 函数功能：支持度、置信度算法，输出筛选后的置信度
+# input: dataset--原始数据集，list格式；minsupport--最小支持度，int格式:itemlen--频繁集长度
+# return:none
+def apriori(rows, columns, minsupport):
+    listgroup = []
+    dictgroup = {}
+    
+    # 生成dataset
+    dataset1 = dataset(rows, columns)
+    dataset1 = [[1,3,4],[2,3,5],[1,2,3,5],[2,5]]
+    dataset1 = [['l1', 'l2', 'l5'], ['l2', 'l4'], ['l2', 'l3'],
+                ['l1', 'l2', 'l4'], ['l1', 'l3'], ['l2', 'l3'],
+                ['l1', 'l3'], ['l1', 'l2', 'l3', 'l5'], ['l1', 'l2', 'l3']]
+    print('dataset1:', dataset1)
+    
+    # 统计独立的数据
+    numlist = C1(dataset1)
+    
+    print('if the support is set : ', minsupport)
+    dict_temp, list_temp = L1(dataset1, numlist, minsupport)  # 生成长度为1的频繁集
+    listgroup = [list_temp]  # 为了确保长度相同的频繁集方便通过下标索引，所以，针对长度为1的频繁集增加中括号
+    dictgroup.update(dict_temp) # 对应将长度为1的频繁集加入字典，以便后续计算置信度
+    itemlen = 2 # 新频繁集最小长度为2
+    
+    # 计算频繁集
+    while 0 < len(list(list_temp)): # 当没有新的频繁集时，list_temp为[]
+        list_temp = Lk(list_temp, itemlen)  # 计算新的备选频繁集
+        itemlen += 1
+        dict_temp, list_temp = L1(dataset1, list_temp, minsupport) # 根据新的备选频繁集，计算所需的频繁集
+        listgroup.append(list_temp)
+        dictgroup.update(dict_temp)
+    
+    listgroup.remove(listgroup[-1])   
+    conf(listgroup, dictgroup, 0.7)
+    
+apriori(8, 5, 0.2)
